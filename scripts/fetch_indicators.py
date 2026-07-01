@@ -13,7 +13,7 @@ import sys
 import datetime
 import urllib.request
 
-API_KEY = os.environ.get("FRED_API_KEY")
+API_KEY = os.environ.get("FRED_API_KEY", "").strip()
 DATA_PATH = os.path.join(os.path.dirname(__file__), "..", "data.json")
 YEARS_BACK = 5
 
