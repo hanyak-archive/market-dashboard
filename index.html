@@ -254,6 +254,33 @@ const cardsDef = [
 const grid = document.getElementById("cardGrid");
 cardsDef.forEach(c=>{
   const cur = last[c.key], pv = prev[c.key];
+  const hasCur = cur!=null, hasPv = pv!=null;
+  const delta = (hasCur && hasPv) ? cur - pv : null;
+  const invert = c.key==="unemp";
+  const better = delta!=null ? (invert ? delta<0 : delta>0) : null;
+  const deltaCls = delta==null ? "" : (delta===0?"":( better?"arrow-up":"arrow-down"));
+  const arrow = delta==null ? "" : (delta===0?"→":(better?"▲":"▼"));
+  const deltaText = delta==null ? "발표 대기" : `${arrow} ${Math.abs(delta).toFixed(1)} (전월비)`;
+  const valText = hasCur ? c.fmt(cur) : "—";
+  const pts = records.map(r=>r[c.key]).filter(v=>v!=null);
+  let poly = "";
+  if(pts.length){
+    const min=Math.min(...pts), max=Math.max(...pts), span=(max-min)||1;
+    const w=100,h=30, step = pts.length>1 ? w/(pts.length-1) : 0;
+    poly = pts.map((v,i)=> `${i*step},${h-((v-min)/span)*h}`).join(" ");
+  }
+  grid.innerHTML += `
+    <div class="card ${c.cls}" data-key="${c.key}" data-label="${c.label}" data-cls="${c.cls}">
+      <div class="tag">${c.tag}</div>
+      <div class="name">${c.label}</div>
+      <div class="val">${valText}</div>
+      <div class="delta ${deltaCls}">${deltaText}</div>
+      <svg viewBox="0 0 100 30" preserveAspectRatio="none"><polyline points="${poly}" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+    </div>`;
+});
+const grid = document.getElementById("cardGrid");
+cardsDef.forEach(c=>{
+  const cur = last[c.key], pv = prev[c.key];
   const delta = cur - pv;
   const invert = c.key==="unemp";
   const better = invert ? delta<0 : delta>0;
