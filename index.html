@@ -22,14 +22,16 @@
   .sub{color:var(--sub);font-size:13.5px;margin:0 0 32px;}
 
   .hero{
-    display:grid; grid-template-columns:280px 1fr; gap:36px;
+    display:grid; grid-template-columns:1fr; gap:20px;
     background:var(--panel); border:1px solid var(--line); border-radius:16px;
-    padding:32px; margin-bottom:28px; align-items:center;
+    padding:28px 32px; margin-bottom:28px;
   }
-  .wheel-box{display:flex;flex-direction:column;align-items:center;}
-  .wheel-label{margin-top:14px;text-align:center;}
-  .wheel-phase{font-family:Georgia,serif;font-size:22px;font-weight:700;}
-  .wheel-sub{font-size:12px;color:var(--sub);margin-top:2px;}
+  .cycle-box{width:100%;}
+  .cycle-box svg{width:100%;height:auto;display:block;}
+  .cycle-head{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:6px;}
+  .wheel-phase{font-family:Georgia,serif;font-size:24px;font-weight:700;}
+  .wheel-sub{font-size:12.5px;color:var(--sub);}
+  .emotion-now{font-size:12.5px;color:var(--gold);}
 
   .hero-right{display:flex;flex-direction:column;gap:14px;}
   .verdict-row{display:flex;gap:10px;flex-wrap:wrap;}
@@ -104,12 +106,15 @@
   <p class="sub">선행·동행·후행 6개 지표 기반 국면 판정 · <span id="asOf"></span> 기준</p>
 
   <div class="hero">
-    <div class="wheel-box">
-      <svg id="wheel" width="220" height="220" viewBox="0 0 220 220"></svg>
-      <div class="wheel-label">
-        <div class="wheel-phase" id="phaseName"></div>
-        <div class="wheel-sub" id="phaseSub"></div>
+    <div class="cycle-box">
+      <div class="cycle-head">
+        <div>
+          <span class="wheel-phase" id="phaseName"></span>
+          <span class="wheel-sub" id="phaseSub"></span>
+        </div>
+        <div class="emotion-now" id="emotionNow"></div>
       </div>
+      <svg id="cycleCurve" viewBox="0 0 900 300" preserveAspectRatio="xMidYMid meet"></svg>
     </div>
     <div class="hero-right">
       <div class="verdict-row" id="verdictRow"></div>
@@ -294,27 +299,96 @@ menus[phase].forEach(([cat,val])=>{
   ml.innerHTML += `<div class="menu-item"><div class="cat">${cat}</div><div class="val">${val}</div></div>`;
 });
 
-/* 사이클 휠 (SVG) */
-(function drawWheel(){
-  const svg = document.getElementById("wheel");
-  const cx=110, cy=110, r=88, rInner=58;
-  const phases = ["회복","성장","둔화","침체"];
-  const colors = {"회복":"#4C9A8C","성장":"#D8A34C","둔화":"#B5654A","침체":"#6B7280"};
-  const seg = Math.PI/2;
+/* ── 감정 사이클 곡선 (필기 프레임: 회복→성장→둔화→침체 + 감정 라벨) ── */
+(function drawCycleCurve(){
+  const svg = document.getElementById("cycleCurve");
+  const W=900, H=300, padX=30, baseY=160, amp=95;
+  const phaseColors = {"회복":"#4C9A8C","성장":"#D8A34C","둔화":"#B5654A","침체":"#6B7280"};
+
+  // 곡선: 저점(t=0, 회복 시작) → 고점(t=0.5, 성장 끝) → 저점(t=1, 침체 끝)
+  // cos(0)=1(아래=저점), cos(π)=-1(위=고점), cos(2π)=1(아래=저점)
+  const Y = t => baseY + amp * Math.cos(2 * Math.PI * t);
+  const X = t => padX + t * (W - padX*2);
+
+  // 국면 경계: 회복 0~0.25, 성장 0.25~0.5, 둔화 0.5~0.75, 침체 0.75~1
+  const phases = [
+    {name:"회복", from:0, to:0.28},
+    {name:"성장", from:0.28, to:0.5},
+    {name:"둔화", from:0.5, to:0.75},
+    {name:"침체", from:0.75, to:1},
+  ];
+
+  // 감정 라벨 (필기 순서): 저점부터 시작
+  const emotions = [
+    {t:0.02, label:"우울"}, {t:0.09, label:"희망"}, {t:0.16, label:"안도"},
+    {t:0.24, label:"낙관"}, {t:0.32, label:"흥분"}, {t:0.40, label:"스릴"},
+    {t:0.485, label:"희열"},
+    {t:0.56, label:"불안"}, {t:0.62, label:"부정"}, {t:0.68, label:"공포"},
+    {t:0.74, label:"절망"}, {t:0.80, label:"패닉"}, {t:0.87, label:"항복"},
+    {t:0.95, label:"우울"},
+  ];
+
+  // 현재 위치: 국면 + 판정 조합으로 t 결정
+  const phaseCenter = {"회복":0.14, "성장":0.39, "둔화":0.625, "침체":0.875};
+  let posT, posRange = 0;
+  if(phase in phaseCenter){
+    posT = phaseCenter[phase];
+  } else {
+    // 국면전환 관찰중: 선행 방향으로 추정 위치, 범위 넓게 표시
+    if(leadJ==="상승" && lagJ!=="하락") posT = 0.44;      // 성장 후반 추정
+    else if(leadJ==="하락") posT = 0.55;                    // 둔화 초입 추정
+    else posT = 0.47;
+    posRange = 0.09; // 불확실 범위
+  }
+
   let html = "";
-  phases.forEach((p,i)=>{
-    const start = -Math.PI/2 + i*seg;
-    const end = start + seg - 0.06;
-    const x1=cx+r*Math.cos(start), y1=cy+r*Math.sin(start);
-    const x2=cx+r*Math.cos(end), y2=cy+r*Math.sin(end);
-    const x3=cx+rInner*Math.cos(end), y3=cy+rInner*Math.sin(end);
-    const x4=cx+rInner*Math.cos(start), y4=cy+rInner*Math.sin(start);
-    const active = p===phase;
-    html += `<path d="M${x1},${y1} A${r},${r} 0 0 1 ${x2},${y2} L${x3},${y3} A${rInner},${rInner} 0 0 0 ${x4},${y4} Z"
-      fill="${colors[p]}" opacity="${active?1:0.22}"/>`;
+  // 국면 밴드 배경
+  phases.forEach(p=>{
+    html += `<rect x="${X(p.from)}" y="20" width="${X(p.to)-X(p.from)}" height="${H-60}"
+      fill="${phaseColors[p.name]}" opacity="${p.name===phase?0.14:0.05}"/>`;
+    html += `<text x="${(X(p.from)+X(p.to))/2}" y="${H-18}" text-anchor="middle"
+      fill="${p.name===phase?phaseColors[p.name]:'#5B6472'}" font-size="14" font-weight="${p.name===phase?700:400}">${p.name}</text>`;
   });
-  html += `<circle cx="${cx}" cy="${cy}" r="${rInner-4}" fill="#161D27" stroke="#2A3341"/>`;
+  // 국면 경계선
+  phases.slice(1).forEach(p=>{
+    html += `<line x1="${X(p.from)}" y1="20" x2="${X(p.from)}" y2="${H-40}" stroke="#2A3341" stroke-dasharray="4 4"/>`;
+  });
+
+  // 곡선
+  const pts = [];
+  for(let i=0;i<=200;i++){ const t=i/200; pts.push(`${X(t)},${Y(t)}`); }
+  html += `<polyline points="${pts.join(" ")}" fill="none" stroke="#8B93A1" stroke-width="2.5" opacity="0.9"/>`;
+
+  // 감정 라벨: 곡선 위/아래 번갈아 배치, 고점 부근은 위쪽
+  emotions.forEach(e=>{
+    const ex=X(e.t), ey=Y(e.t);
+    const above = ey < baseY; // 곡선이 위쪽(고점권)이면 라벨은 더 위
+    const ly = above ? ey - 16 : ey + 22;
+    const isPeak = e.label==="희열";
+    html += `<circle cx="${ex}" cy="${ey}" r="3" fill="#5B6472"/>`;
+    html += `<text x="${ex}" y="${ly}" text-anchor="middle" font-size="12"
+      fill="${isPeak?'#C97C6B':'#8B93A1'}" font-weight="${isPeak?700:400}">${e.label}</text>`;
+  });
+
+  // 현재 위치 (불확실 범위 표시)
+  if(posRange>0){
+    const rp=[]; 
+    for(let i=0;i<=40;i++){ const t=posT-posRange+(i/40)*posRange*2; rp.push(`${X(t)},${Y(t)}`); }
+    html += `<polyline points="${rp.join(" ")}" fill="none" stroke="#D8A34C" stroke-width="7" opacity="0.35" stroke-linecap="round"/>`;
+  }
+  const px=X(posT), py=Y(posT);
+  html += `<circle cx="${px}" cy="${py}" r="11" fill="#D8A34C" opacity="0.25">
+      <animate attributeName="r" values="9;15;9" dur="2.4s" repeatCount="indefinite"/>
+    </circle>`;
+  html += `<circle cx="${px}" cy="${py}" r="6" fill="#D8A34C" stroke="#10151C" stroke-width="2"/>`;
+  html += `<text x="${px}" y="${py-22}" text-anchor="middle" font-size="13" font-weight="700" fill="#D8A34C">현재 위치${posRange>0?" (추정)":""}</text>`;
+
   svg.innerHTML = html;
+
+  // 현재 감정 라벨 표시
+  let nearest = emotions[0], best=1e9;
+  emotions.forEach(e=>{ const d=Math.abs(e.t-posT); if(d<best){best=d; nearest=e;} });
+  document.getElementById("emotionNow").textContent = `지금 시장 감정 근처: ${nearest.label}`;
 })();
 
 /* ── 카드 클릭 -> 3/5년/전체 추이 그래프 ── */
