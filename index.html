@@ -52,6 +52,11 @@
   .card .val{font-family:'Courier New',monospace;font-size:22px;font-weight:700;}
   .card .delta{font-size:12px;margin-top:6px;font-family:'Courier New',monospace;}
   .card svg{width:100%;height:34px;margin-top:10px;}
+  .trend-badge{font-size:11px;padding:3px 9px;border-radius:11px;border:1px solid var(--line);background:var(--panel2);color:var(--sub);white-space:nowrap;}
+  .trend-badge.up{border-color:rgba(127,179,122,.5);color:var(--up);}
+  .trend-badge.down{border-color:rgba(201,124,107,.5);color:var(--down);}
+  .trend-badge.mix{border-color:rgba(216,163,76,.5);color:var(--gold);}
+  .stale{font-size:10px;color:var(--mute);border:1px dashed var(--line);border-radius:8px;padding:1px 6px;margin-left:4px;vertical-align:middle;}
   .card{cursor:pointer;transition:border-color .15s, transform .15s;}
   .card:hover{border-color:var(--gold);transform:translateY(-2px);}
   .card.active{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold) inset;}
@@ -268,13 +273,57 @@ function judge(a,b){
 
 (async function render(){
 const records = await loadRecords();
-const last = records[records.length-1], prev = records[records.length-2];
-const leadStock = dir(last.stock, prev.stock);
-const leadPmi = dir(last.pmi, prev.pmi);
-const coinIp = dir(last.ip, prev.ip);
-const coinRetail = dir(last.retail, prev.retail);
-const lagGdp = dir(last.gdp, prev.gdp);
-const lagUnemp = dir(last.unemp, prev.unemp, true); // 실업률은 낮아지는게 개선
+const last = records[records.length-1];
+
+/* 지표별로 null을 건너뛴 발표값 시계열 구성 */
+function seriesOf(key){
+  return records.filter(r=>r[key]!=null).map(r=>({m:r.m, v:r[key]}));
+}
+const SERIES = {};
+["stock","pmi","ip","retail","gdp","unemp"].forEach(k=> SERIES[k]=seriesOf(k));
+
+function latestOf(key){ const s=SERIES[key]; return s.length? s[s.length-1] : null; }
+function prevOf(key){ const s=SERIES[key]; return s.length>1? s[s.length-2] : null; }
+
+/* 매트릭스 화살표 어휘로 추세 상태 분류 (최근 7개 발표값 기준)
+   상승↗ / 하락↘ / 반등↺(하락 후 상승 전환) / 전환⤵(상승 후 꺾임=픽아웃) / 바닥〰 / 고점 부근 / 횡보→ */
+function classifyTrend(key, invert=false){
+  let vals = SERIES[key].slice(-7).map(e=>e.v);
+  if(vals.length < 4) return {state:"데이터 부족", arrow:"?", cls:"neutral"};
+  if(invert) vals = vals.map(v=>-v); // 실업률: 하락=개선이므로 부호 반전 후 분류
+  const n = vals.length;
+  const range = Math.max(...vals) - Math.min(...vals) || 1;
+  const th = range * 0.15;
+  const recent = vals[n-1] - vals[n-3];   // 최근 2개 발표 구간
+  const earlier = vals[n-3] - vals[0];    // 그 이전 구간
+  const nearMin = vals[n-1] <= Math.min(...vals) + th;
+  const nearMax = vals[n-1] >= Math.max(...vals) - th;
+  if(recent >  th && earlier >  th) return {state:"상승", arrow:"↗", cls:"up"};
+  if(recent < -th && earlier < -th) return {state:"하락", arrow:"↘", cls:"down"};
+  if(recent >  th && earlier < -th) return {state:"반등", arrow:"↺", cls:"up"};
+  if(recent < -th && earlier >  th) return {state:"전환(픽아웃)", arrow:"⤵", cls:"down"};
+  if(Math.abs(recent) <= th && nearMin) return {state:"바닥", arrow:"〰", cls:"neutral"};
+  if(Math.abs(recent) <= th && nearMax) return {state:"고점 횡보", arrow:"→", cls:"mix"};
+  return {state:"횡보", arrow:"→", cls:"neutral"};
+}
+const TRENDS = {
+  stock: classifyTrend("stock"), pmi: classifyTrend("pmi"),
+  ip: classifyTrend("ip"), retail: classifyTrend("retail"),
+  gdp: classifyTrend("gdp"), unemp: classifyTrend("unemp", true),
+};
+
+/* 국면 판정: 각 지표의 '가장 최근 발표값' 2개로 방향 계산 (미발표 달 무시) */
+function dirOf(key, invert=false){
+  const a=latestOf(key), b=prevOf(key);
+  if(!a||!b) return null;
+  return dir(a.v, b.v, invert);
+}
+const leadStock = dirOf("stock");
+const leadPmi = dirOf("pmi");
+const coinIp = dirOf("ip");
+const coinRetail = dirOf("retail");
+const lagGdp = dirOf("gdp");
+const lagUnemp = dirOf("unemp", true); // 실업률은 낮아지는게 개선
 
 const leadJ = judge(leadStock, leadPmi);
 const coinJ = judge(coinIp, coinRetail);
@@ -314,16 +363,19 @@ const cardsDef = [
 ];
 const grid = document.getElementById("cardGrid");
 cardsDef.forEach(c=>{
-  const cur = last[c.key], pv = prev[c.key];
-  const hasCur = cur!=null, hasPv = pv!=null;
-  const delta = (hasCur && hasPv) ? cur - pv : null;
+  const cur = latestOf(c.key), pv = prevOf(c.key);
+  const delta = (cur && pv) ? cur.v - pv.v : null;
   const invert = c.key==="unemp";
   const better = delta!=null ? (invert ? delta<0 : delta>0) : null;
   const deltaCls = delta==null ? "" : (delta===0?"":( better?"arrow-up":"arrow-down"));
   const arrow = delta==null ? "" : (delta===0?"→":(better?"▲":"▼"));
-  const deltaText = delta==null ? "발표 대기" : `${arrow} ${Math.abs(delta).toFixed(1)} (전월비)`;
-  const valText = hasCur ? c.fmt(cur) : "—";
-  const pts = records.map(r=>r[c.key]).filter(v=>v!=null);
+  const deltaText = delta==null ? "발표 대기" : `${arrow} ${Math.abs(delta).toFixed(1)} (직전 발표비)`;
+  const valText = cur ? c.fmt(cur.v) : "—";
+  // 최신 달 데이터가 아니면 발표월 표기
+  const staleNote = (cur && cur.m !== last.m) ? `<span class="stale">${parseInt(cur.m.slice(5),10)}월 발표값</span>` : "";
+  const tr = TRENDS[c.key];
+  const trendBadge = `<span class="trend-badge ${tr.cls}">${tr.arrow} ${tr.state}</span>`;
+  const pts = SERIES[c.key].map(e=>e.v);
   let poly = "";
   if(pts.length){
     const min=Math.min(...pts), max=Math.max(...pts), span=(max-min)||1;
@@ -333,9 +385,10 @@ cardsDef.forEach(c=>{
   grid.innerHTML += `
     <div class="card ${c.cls}" data-key="${c.key}" data-label="${c.label}" data-cls="${c.cls}">
       <div class="tag">${c.tag}</div>
-      <div class="name">${c.label}</div>
+      <div class="name">${c.label} ${staleNote}</div>
       <div class="val">${valText}</div>
       <div class="delta ${deltaCls}">${deltaText}</div>
+      <div style="margin-top:6px;">${trendBadge}</div>
       <svg viewBox="0 0 100 30" preserveAspectRatio="none"><polyline points="${poly}" fill="none" stroke="currentColor" stroke-width="2"/></svg>
     </div>`;
 });
