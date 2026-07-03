@@ -1,0 +1,65 @@
+{
+  "updated": "2026-07-02",
+  "scanned": 87,
+  "counts": {
+    "trap_growth_end": 1,
+    "recovery_pessim": 0,
+    "overheat": 2,
+    "slowdown": 1
+  },
+  "rules": {
+    "trap_growth_end": {
+      "label": "🔴 성장말기 함정 서사",
+      "desc": "후행지표 낙관+주가 하락+저가매수 유혹 — 성장→둔화 전환기 전형 패턴"
+    },
+    "recovery_pessim": {
+      "label": "🟢 회복기 비관 서사 (역발상 기회)",
+      "desc": "나홀로 상승·거품론·실물 괴리 — 회복 초입에 나오는 전형 패턴"
+    },
+    "overheat": {
+      "label": "🟡 과열 서사",
+      "desc": "빚투·영끌·차트 열풍 — 성장국면 끄트머리의 도파민 신호"
+    },
+    "slowdown": {
+      "label": "🟠 둔화 서사",
+      "desc": "소비 위축·재고·폐업 — 둔화 국면 진입 신호"
+    }
+  },
+  "flagged": [
+    {
+      "signal": "trap_growth_end",
+      "label": "🔴 성장말기 함정 서사",
+      "title": "(예시) 양호한 실업률 속 나홀로 하락한 증시… 밸류에이션 기회론 고개",
+      "link": "#"
+    },
+    {
+      "signal": "overheat",
+      "label": "🟡 과열 서사",
+      "title": "(예시) 신용융자 사상 최대치… 빚투 열풍 다시 불붙나",
+      "link": "#"
+    }
+  ],
+  "phase_scores": {
+    "회복": 3,
+    "성장": 11,
+    "둔화": 5,
+    "침체": 1
+  },
+  "news_phase": "성장",
+  "phase_examples": {},
+  "history": [
+    {
+      "date": "2026-07-02",
+      "trap_growth_end": 1,
+      "recovery_pessim": 0,
+      "overheat": 2,
+      "slowdown": 1,
+      "phase_scores": {
+        "회복": 3,
+        "성장": 11,
+        "둔화": 5,
+        "침체": 1
+      }
+    }
+  ]
+}

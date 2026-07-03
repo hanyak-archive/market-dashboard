@@ -96,6 +96,27 @@
   .menu-item .cat{color:var(--sub);min-width:74px;}
   .menu-item .val{color:var(--text);text-align:right;}
 
+  .news-item{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px;align-items:baseline;}
+  .news-item:last-child{border-bottom:none;}
+  .news-item .sig{flex-shrink:0;font-size:12px;}
+  .news-item a{color:var(--text);text-decoration:none;}
+  .news-item a:hover{color:var(--gold);}
+  .news-empty{color:var(--mute);font-size:13px;padding:6px 0;}
+
+  .phase-bars{margin:6px 0 16px;}
+  .pbar-row{display:flex;align-items:center;gap:10px;margin-bottom:7px;font-size:12.5px;}
+  .pbar-row .pname{width:70px;color:var(--sub);flex-shrink:0;}
+  .pbar-track{flex:1;height:14px;background:var(--panel2);border-radius:7px;overflow:hidden;}
+  .pbar-fill{height:100%;border-radius:7px;transition:width .4s;}
+  .pbar-row .pcount{width:36px;text-align:right;color:var(--mute);font-family:'Courier New',monospace;}
+  .divergence{
+    font-size:13px;line-height:1.65;padding:12px 14px;border-radius:10px;
+    background:var(--panel2);border:1px solid var(--line);margin-bottom:14px;
+  }
+  .divergence b{color:var(--gold);}
+  .divergence.alert{border-color:rgba(201,124,107,.5);}
+  .divergence.opportunity{border-color:rgba(127,179,122,.5);}
+
   .foot{margin-top:28px;font-size:11.5px;color:var(--mute);text-align:center;}
 </style>
 </head>
@@ -137,6 +158,14 @@
       </div>
     </div>
     <div class="detail-chart-wrap"><svg id="detailChart" width="100%" height="240"></svg></div>
+  </div>
+
+  <div class="panel" style="margin-bottom:20px;">
+    <h2>기사 신호 레이더 <span id="newsMeta" style="font-size:12px;color:var(--mute);font-weight:400;"></span></h2>
+    <div class="phase-bars" id="phaseBars"></div>
+    <div class="divergence" id="divergenceNote" style="display:none;"></div>
+    <div class="verdict-row" id="newsCounts" style="margin-bottom:14px;"></div>
+    <div id="newsFlagged"></div>
   </div>
 
   <div class="two-col">
@@ -460,6 +489,80 @@ document.getElementById("detailClose").addEventListener("click",()=>{
   currentKey = null;
 });
 document.querySelector('.range-btn[data-range="36"]').classList.add("active");
+
+/* ── 기사 신호 레이더 ── */
+(async function renderNews(){
+  let n = null;
+  try{
+    const res = await fetch('news_signals.json', {cache:'no-store'});
+    if(res.ok) n = await res.json();
+  }catch(e){ /* 파일 없으면 안내만 표시 */ }
+
+  const meta = document.getElementById("newsMeta");
+  const countsEl = document.getElementById("newsCounts");
+  const flaggedEl = document.getElementById("newsFlagged");
+  if(!n){
+    meta.textContent = "";
+    countsEl.innerHTML = "";
+    flaggedEl.innerHTML = `<div class="news-empty">news_signals.json이 아직 없어요. Actions에서 "기사 신호 자동 분석" 워크플로우를 한 번 실행하면 채워집니다.</div>`;
+    return;
+  }
+  meta.textContent = `· ${n.updated} 기준, 기사 ${n.scanned}건 스캔`;
+
+  /* 국면 서사 막대 */
+  const barsEl = document.getElementById("phaseBars");
+  const phaseColors = {"회복":"#4C9A8C","성장":"#D8A34C","둔화":"#B5654A","침체":"#6B7280"};
+  if(n.phase_scores){
+    const maxScore = Math.max(1, ...Object.values(n.phase_scores));
+    barsEl.innerHTML = Object.entries(n.phase_scores).map(([ph,score])=>{
+      const w = (score/maxScore*100).toFixed(0);
+      const isTop = ph===n.news_phase && score>0;
+      return `<div class="pbar-row">
+        <div class="pname" style="${isTop?`color:${phaseColors[ph]};font-weight:700;`:''}">${ph} 서사</div>
+        <div class="pbar-track"><div class="pbar-fill" style="width:${w}%;background:${phaseColors[ph]};opacity:${isTop?1:0.45};"></div></div>
+        <div class="pcount">${score}건</div>
+      </div>`;
+    }).join("");
+  }
+
+  /* 지표 판정 vs 기사 서사 비교 */
+  const divEl = document.getElementById("divergenceNote");
+  const indicatorPhase = document.getElementById("phaseName")?.textContent || "";
+  if(n.news_phase){
+    let cls = "", msg = "";
+    const np = n.news_phase;
+    if(indicatorPhase.includes("회복") && (np==="침체"||np==="둔화")){
+      cls = "opportunity";
+      msg = `지표는 <b>회복</b>을 가리키는데 기사 서사는 여전히 <b>${np}</b> 쪽이에요. 2023년처럼 <b>비관 속 매수 검토 구간</b>일 수 있어요 — 아무도 안 살 때가 회복 초입이었죠.`;
+    } else if(indicatorPhase.includes("성장") && np==="성장"){
+      cls = "alert";
+      msg = `지표도 기사도 모두 <b>성장</b> 일색이에요. 낙관이 만연할 때가 성장국면 끄트머리일 수 있으니 <b>수익실현 검토 구간</b>이에요. 과열 서사(빚투·차트 열풍) 건수를 함께 지켜보세요.`;
+    } else if(indicatorPhase.includes("관찰중")){
+      msg = `지표는 <b>혼조(관찰중)</b>, 기사 서사는 <b>${np}</b> 쪽으로 기울어 있어요. 다음 지표 발표에서 어느 쪽으로 확정되는지 함께 보세요.`;
+    } else if(indicatorPhase.includes(np)){
+      msg = `지표와 기사 서사가 모두 <b>${np}</b>로 일치해요. 현재 국면 판정의 신뢰도가 높은 상태예요.`;
+    } else {
+      msg = `지표는 <b>${indicatorPhase}</b>, 기사 서사는 <b>${np}</b> — 서로 어긋나 있어요. 이런 괴리 구간이 국면 전환의 초입일 수 있으니 선행지표를 우선 신뢰하세요.`;
+    }
+    divEl.className = `divergence ${cls}`;
+    divEl.innerHTML = `📰 ${msg}`;
+    divEl.style.display = "block";
+  }
+
+  const sigColor = {trap_growth_end:"down", recovery_pessim:"up", overheat:"mix", slowdown:"mix"};
+  countsEl.innerHTML = Object.entries(n.counts).map(([k,v])=>{
+    const label = n.rules[k]?.label || k;
+    return `<div class="chip ${v>0?sigColor[k]:''}" title="${n.rules[k]?.desc||''}">${label} <b>${v}건</b></div>`;
+  }).join("");
+
+  if(n.flagged && n.flagged.length){
+    flaggedEl.innerHTML = n.flagged.map(f=>
+      `<div class="news-item"><span class="sig">${f.label.split(" ")[0]}</span><a href="${f.link}" target="_blank" rel="noopener">${f.title}</a></div>`
+    ).join("");
+  } else {
+    flaggedEl.innerHTML = `<div class="news-empty">오늘 스캔에서 매칭된 함정·신호 서사가 없어요. 조용한 날이에요.</div>`;
+  }
+})();
 
 })();
 
