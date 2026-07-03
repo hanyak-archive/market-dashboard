@@ -117,6 +117,15 @@
   .divergence.alert{border-color:rgba(201,124,107,.5);}
   .divergence.opportunity{border-color:rgba(127,179,122,.5);}
 
+  .rot-table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:12px;}
+  .rot-table th{color:var(--mute);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em;text-align:left;padding:8px;border-bottom:1px solid var(--line);}
+  .rot-table td{padding:8px;border-bottom:1px solid var(--line);}
+  .rot-table .match{color:var(--up);font-weight:700;}
+  .rot-table .mismatch{color:var(--down);font-weight:700;}
+  .rot-table .neutral{color:var(--mute);}
+  .rot-summary{font-size:13px;line-height:1.65;padding:12px 14px;border-radius:10px;background:var(--panel2);border:1px solid var(--line);}
+  .rot-summary b{color:var(--gold);}
+
   .foot{margin-top:28px;font-size:11.5px;color:var(--mute);text-align:center;}
 </style>
 </head>
@@ -166,6 +175,15 @@
     <div class="divergence" id="divergenceNote" style="display:none;"></div>
     <div class="verdict-row" id="newsCounts" style="margin-bottom:14px;"></div>
     <div id="newsFlagged"></div>
+  </div>
+
+  <div class="panel" style="margin-bottom:20px;">
+    <h2>시장 로테이션 체크 <span id="rotMeta" style="font-size:12px;color:var(--mute);font-weight:400;"></span></h2>
+    <table class="rot-table">
+      <thead><tr><th>상대강도 지표</th><th>3개월 실제</th><th>이론 기대</th><th>일치</th></tr></thead>
+      <tbody id="rotBody"></tbody>
+    </table>
+    <div class="rot-summary" id="rotSummary"></div>
   </div>
 
   <div class="two-col">
@@ -489,6 +507,84 @@ document.getElementById("detailClose").addEventListener("click",()=>{
   currentKey = null;
 });
 document.querySelector('.range-btn[data-range="36"]').classList.add("active");
+
+/* ── 시장 로테이션 체크 ── */
+(async function renderRotation(){
+  let m = null;
+  try{
+    const res = await fetch('markets.json', {cache:'no-store'});
+    if(res.ok) m = await res.json();
+  }catch(e){}
+  const body = document.getElementById("rotBody");
+  const summary = document.getElementById("rotSummary");
+  const meta = document.getElementById("rotMeta");
+  if(!m || !m.ratios){
+    meta.textContent = "";
+    summary.innerHTML = `markets.json이 아직 없어요. Actions에서 "시장 로테이션 갱신" 워크플로우를 한 번 실행하면 채워집니다.`;
+    return;
+  }
+  meta.textContent = `· ${m.updated} 기준 · 3개월 상대강도`;
+
+  // 슬라이드 로테이션 표의 국면별 기대 방향
+  const EXPECT = {
+    "회복": {em_us:"↓", nonus_us:"↓", qqq_spy:"↑", iwm_spy:"↓", vug_vtv:"↑", dia_spy:"↓", usd:"↑"},
+    "성장": {em_us:"↑", nonus_us:"↑", qqq_spy:"→", iwm_spy:"↑", vug_vtv:"→", dia_spy:"→", usd:"↓"},
+    "둔화": {em_us:"↓", nonus_us:"↓", qqq_spy:"↓", iwm_spy:"↓", vug_vtv:"↓", dia_spy:"↑", usd:"↑"},
+    "침체": {em_us:"↓", nonus_us:"↓", qqq_spy:"↑", iwm_spy:"↓", vug_vtv:"→", dia_spy:"→", usd:"↑"},
+  };
+  const LEADERS = {
+    "회복": "미국 대형 성장주(나스닥·M7) 중심, 달러 우위 — 이머징보다 미국을 쥐고 갈 구간",
+    "성장": "이머징(한국·중국 등)·중소형주(러셀2000)·시클리컬(에너지·소재·산업재), 달러 약세 수혜",
+    "둔화": "배당·방어·가치주(통신·제약·필수소비재·유틸리티), 다우 우위, 달러 강세",
+    "침체": "메가캡·퀄리티·방어주, 장기채·금, 달러 초강세 — 위험자산 매수는 이미 완료 상태여야",
+  };
+
+  // 지표 판정 국면 (히어로에서 계산된 값)
+  const indicatorPhase = (document.getElementById("phaseName")?.textContent || "").trim();
+  const knownPhase = ["회복","성장","둔화","침체"].find(p=>indicatorPhase.includes(p));
+
+  // 시장이 행동하는 국면: 4국면 각각과 실제 방향 일치율 계산
+  const phaseFit = {};
+  ["회복","성장","둔화","침체"].forEach(ph=>{
+    let match=0, counted=0;
+    Object.entries(EXPECT[ph]).forEach(([k, exp])=>{
+      if(exp==="→") return; // 중립 기대는 채점 제외
+      const actual = m.ratios[k]?.dir;
+      if(!actual || actual==="?") return;
+      counted++;
+      if(actual===exp) match++;
+    });
+    phaseFit[ph] = counted>0 ? match/counted : 0;
+  });
+  const marketPhase = Object.entries(phaseFit).sort((a,b)=>b[1]-a[1])[0];
+
+  // 비교표: 기준 국면은 지표 판정이 확정이면 그것, 아니면 시장 행동 최적합 국면
+  const basePhase = knownPhase || marketPhase[0];
+  let rows = "", matchCount=0, totalCount=0;
+  Object.entries(m.ratios).forEach(([k, r])=>{
+    const exp = EXPECT[basePhase][k];
+    const actual = r.dir;
+    const chg = r.chg3m==null ? "" : ` (${r.chg3m>0?"+":""}${r.chg3m}%)`;
+    let cell, cls;
+    if(exp==="→" || actual==="?"){ cell="—"; cls="neutral"; }
+    else if(actual===exp){ cell="✓"; cls="match"; matchCount++; totalCount++; }
+    else { cell="✗"; cls="mismatch"; totalCount++; }
+    rows += `<tr><td>${r.label}</td><td>${actual}${chg}</td><td>${exp}</td><td class="${cls}">${cell}</td></tr>`;
+  });
+  body.innerHTML = rows;
+
+  const fitPct = (marketPhase[1]*100).toFixed(0);
+  let msg = `시장 상대강도가 가장 잘 들어맞는 국면은 <b>${marketPhase[0]}</b> (일치율 ${fitPct}%)이에요. `;
+  if(knownPhase){
+    msg += marketPhase[0]===knownPhase
+      ? `지표 판정(<b>${knownPhase}</b>)과도 일치해요 — 세 나침반이 같은 방향이면 신뢰도가 높습니다.`
+      : `지표 판정(<b>${knownPhase}</b>)과 어긋나 있어요. 시장이 다음 국면을 미리 반영 중일 수 있으니 선행지표와 함께 재확인하세요.`;
+  } else {
+    msg += `지표 판정이 혼조인 지금, 시장은 <b>${marketPhase[0]}</b>처럼 행동하고 있어요.`;
+  }
+  msg += `<br>📈 이 국면에서 뜨는 시장: ${LEADERS[basePhase]}`;
+  summary.innerHTML = msg;
+})();
 
 /* ── 기사 신호 레이더 ── */
 (async function renderNews(){
