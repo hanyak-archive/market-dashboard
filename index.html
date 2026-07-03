@@ -182,7 +182,7 @@
       <div class="verdict-row" id="verdictRow"></div>
       <div class="vix-block" id="vixGauge" style="display:none;">
         <div class="vix-head">
-          <span class="vix-title">시장 공포지수 (VIX)</span>
+          <span class="vix-title">시장 공포지수 (VIX) <span id="vixTitleMeta" style="color:var(--mute);font-weight:400;"></span></span>
           <span><span class="vix-val" id="vixVal"></span><span class="vix-zone-name" id="vixZone"></span></span>
         </div>
         <div class="vix-track"><div class="vix-marker" id="vixMarker"></div></div>
@@ -449,11 +449,29 @@ const topFit = fitSorted[0], secondFit = fitSorted[1];
   document.getElementById("phaseSentence").innerHTML = "🚦 " + s;
 })();
 
-/* VIX 공포지수 온도계 */
-(function renderVix(){
-  const s = seriesOf("vix");
-  if(!s.length) return; // 데이터 없으면 숨김 (다음 지표 갱신 실행 시 자동 표시)
-  const v = s[s.length-1].v;
+/* VIX 공포지수 온도계 (일별 데이터 우선, 없으면 월간 데이터로 대체) */
+(async function renderVix(){
+  let v, spark, updatedLabel;
+  try{
+    const res = await fetch('vix_daily.json', {cache:'no-store'});
+    if(res.ok){
+      const d = await res.json();
+      if(d.values && d.values.length){
+        v = d.latest;
+        spark = d.values.slice(-30).map(e=>e.value);
+        updatedLabel = `${d.updated} 기준 (일별)`;
+      }
+    }
+  }catch(e){ /* 폴백으로 진행 */ }
+
+  if(v === undefined){
+    const s = seriesOf("vix");
+    if(!s.length) return; // 둘 다 없으면 블록 숨김 유지
+    v = s[s.length-1].v;
+    spark = s.slice(-12).map(e=>e.v);
+    updatedLabel = `${s[s.length-1].m} 기준 (월별, 아직 일별 데이터 없음)`;
+  }
+
   const g = document.getElementById("vixGauge");
   g.style.display = "block";
   // 게이지 위치 (8~45 스케일)
@@ -470,17 +488,17 @@ const topFit = fitSorted[0], secondFit = fitSorted[1];
   document.getElementById("vixVal").textContent = v.toFixed(1);
   const zn = document.getElementById("vixZone");
   zn.textContent = z.name; zn.style.color = z.color;
-  // 12개월 스파크라인
-  const spark = s.slice(-12).map(e=>e.v);
+  document.getElementById("vixTitleMeta").textContent = updatedLabel;
+  // 스파크라인 (최근 12~30개 값)
   const mn=Math.min(...spark), mx=Math.max(...spark), sp=(mx-mn)||1;
   const step = spark.length>1 ? 100/(spark.length-1) : 0;
   const pts = spark.map((val,i)=>`${i*step},${28-((val-mn)/sp)*26}`).join(" ");
   document.getElementById("vixSpark").innerHTML =
     `<polyline points="${pts}" fill="none" stroke="${z.color}" stroke-width="2"/>
      <circle cx="${(spark.length-1)*step}" cy="${28-((v-mn)/sp)*26}" r="2.5" fill="${z.color}"/>`;
-  // 12개월 대비 위치 + 감정 곡선 연결 해석
-  const yearAvg = spark.reduce((a,b)=>a+b,0)/spark.length;
-  const rel = v < yearAvg*0.9 ? "최근 1년 평균보다 낮음" : v > yearAvg*1.1 ? "최근 1년 평균보다 높음" : "최근 1년 평균 수준";
+  // 최근 구간 평균 대비 위치 + 감정 곡선 연결 해석
+  const periodAvg = spark.reduce((a,b)=>a+b,0)/spark.length;
+  const rel = v < periodAvg*0.9 ? "최근 구간 평균보다 낮음" : v > periodAvg*1.1 ? "최근 구간 평균보다 높음" : "최근 구간 평균 수준";
   let interp = `시장 심리는 <b>${z.name}</b> 상태 (${rel}) — 감정 곡선의 <b>${z.emotion}</b> 구간과 대응해요.`;
   if(v < 14 && topFit[0]==="성장"){
     interp += ` ⚠️ 성장 신호가 강한데 공포가 이렇게 낮으면, 모두가 안심하는 <b>성장 끄트머리</b>의 전형일 수 있어요.`;

@@ -1,0 +1,34 @@
+name: VIX 일별 갱신
+
+on:
+  schedule:
+    # 매일 오전 7시(KST, UTC 기준 전날 22시) — 미국 시장 마감 이후
+    - cron: '0 22 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: VIX 수집
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+        run: python scripts/fetch_vix.py
+
+      - name: 변경사항 커밋
+        run: |
+          git config user.name "vix-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add vix_daily.json
+          git diff --cached --quiet || git commit -m "chore: VIX 갱신 $(date +%Y-%m-%d)"
+          git pull --rebase origin main
+          git push
