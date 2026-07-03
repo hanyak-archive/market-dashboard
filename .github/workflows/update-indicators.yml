@@ -29,4 +29,5 @@ jobs:
           git config user.email "bot@users.noreply.github.com"
           git add data.json
           git diff --cached --quiet || git commit -m "chore: 경기지표 자동 갱신 $(date +%Y-%m)"
+          git pull --rebase origin main
           git push
