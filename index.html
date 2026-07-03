@@ -34,12 +34,20 @@
   .emotion-now{font-size:12.5px;color:var(--gold);}
 
   .hero-right{display:flex;flex-direction:column;gap:14px;}
-  .vix-gauge{display:flex;align-items:center;gap:12px;font-size:13px;}
-  .vix-track{flex:1;height:12px;border-radius:6px;position:relative;
+  .vix-block{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:14px 16px;}
+  .vix-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;}
+  .vix-title{font-size:12px;color:var(--sub);letter-spacing:.05em;}
+  .vix-val{font-family:'Courier New',monospace;font-weight:700;font-size:20px;}
+  .vix-zone-name{font-size:13px;font-weight:700;margin-left:8px;}
+  .vix-track{height:14px;border-radius:7px;position:relative;
     background:linear-gradient(90deg,#4C9A8C 0%,#4C9A8C 25%,#D8A34C 25%,#D8A34C 45%,#B5654A 45%,#B5654A 70%,#8B4A5C 70%,#8B4A5C 100%);}
-  .vix-marker{position:absolute;top:-4px;width:3px;height:20px;background:#EDEAE2;border-radius:2px;box-shadow:0 0 6px rgba(0,0,0,.6);}
-  .vix-label{color:var(--sub);white-space:nowrap;}
-  .vix-val{font-family:'Courier New',monospace;font-weight:700;white-space:nowrap;}
+  .vix-marker{position:absolute;top:-5px;width:4px;height:24px;background:#EDEAE2;border-radius:2px;box-shadow:0 0 8px rgba(0,0,0,.7);}
+  .vix-zones{display:flex;font-size:10.5px;color:var(--mute);margin-top:5px;}
+  .vix-zones span:nth-child(1){width:25%;} .vix-zones span:nth-child(2){width:20%;}
+  .vix-zones span:nth-child(3){width:25%;} .vix-zones span:nth-child(4){width:30%;}
+  .vix-spark{width:100%;height:30px;margin-top:10px;}
+  .vix-interp{font-size:12.5px;color:var(--sub);line-height:1.6;margin-top:8px;}
+  .vix-interp b{color:var(--text);}
 
   .signal-sentence{font-size:14px;line-height:1.8;padding:14px 16px;border-radius:10px;
     background:var(--panel2);border-left:3px solid var(--gold);}
@@ -172,10 +180,15 @@
     </div>
     <div class="hero-right">
       <div class="verdict-row" id="verdictRow"></div>
-      <div class="vix-gauge" id="vixGauge" style="display:none;">
-        <span class="vix-label">공포지수 VIX</span>
+      <div class="vix-block" id="vixGauge" style="display:none;">
+        <div class="vix-head">
+          <span class="vix-title">시장 공포지수 (VIX)</span>
+          <span><span class="vix-val" id="vixVal"></span><span class="vix-zone-name" id="vixZone"></span></span>
+        </div>
         <div class="vix-track"><div class="vix-marker" id="vixMarker"></div></div>
-        <span class="vix-val" id="vixVal"></span>
+        <div class="vix-zones"><span>😌 안도·낙관</span><span>😐 중립</span><span>😟 불안</span><span>😱 공포·패닉</span></div>
+        <svg class="vix-spark" id="vixSpark" viewBox="0 0 100 30" preserveAspectRatio="none"></svg>
+        <div class="vix-interp" id="vixInterp"></div>
       </div>
       <div class="note" id="noteText"></div>
     </div>
@@ -436,23 +449,45 @@ const topFit = fitSorted[0], secondFit = fitSorted[1];
   document.getElementById("phaseSentence").innerHTML = "🚦 " + s;
 })();
 
-/* VIX 공포지수 게이지 */
+/* VIX 공포지수 온도계 */
 (function renderVix(){
   const s = seriesOf("vix");
-  if(!s.length) return; // 데이터 없으면 게이지 숨김 유지
+  if(!s.length) return; // 데이터 없으면 숨김 (다음 지표 갱신 실행 시 자동 표시)
   const v = s[s.length-1].v;
   const g = document.getElementById("vixGauge");
-  g.style.display = "flex";
-  // 구간: ~15 안도/탐욕(청록) | 15~20 중립(금색) | 20~30 불안(로즈) | 30~45+ 공포/패닉(자주)
+  g.style.display = "block";
+  // 게이지 위치 (8~45 스케일)
   const pos = Math.min(Math.max((v-8)/(45-8), 0), 1) * 100;
-  document.getElementById("vixMarker").style.left = `calc(${pos}% - 1px)`;
-  const zone = v<15 ? "안도·낙관 구간" : v<20 ? "중립 구간" : v<30 ? "불안 구간" : "공포·패닉 구간";
-  document.getElementById("vixVal").textContent = `${v.toFixed(1)} · ${zone}`;
-  // 안주 경고: 성장 신호 강한데 VIX가 매우 낮으면 = 흥분/희열 구간의 전형
+  document.getElementById("vixMarker").style.left = `calc(${pos}% - 2px)`;
+  // 구간 판정
+  const zones = [
+    {max:15, name:"안도·낙관", color:"#4C9A8C", emotion:"안도~흥분"},
+    {max:20, name:"중립", color:"#D8A34C", emotion:"낙관~불안 경계"},
+    {max:30, name:"불안", color:"#B5654A", emotion:"불안~공포"},
+    {max:999, name:"공포·패닉", color:"#8B4A5C", emotion:"공포~항복"},
+  ];
+  const z = zones.find(z=>v<z.max);
+  document.getElementById("vixVal").textContent = v.toFixed(1);
+  const zn = document.getElementById("vixZone");
+  zn.textContent = z.name; zn.style.color = z.color;
+  // 12개월 스파크라인
+  const spark = s.slice(-12).map(e=>e.v);
+  const mn=Math.min(...spark), mx=Math.max(...spark), sp=(mx-mn)||1;
+  const step = spark.length>1 ? 100/(spark.length-1) : 0;
+  const pts = spark.map((val,i)=>`${i*step},${28-((val-mn)/sp)*26}`).join(" ");
+  document.getElementById("vixSpark").innerHTML =
+    `<polyline points="${pts}" fill="none" stroke="${z.color}" stroke-width="2"/>
+     <circle cx="${(spark.length-1)*step}" cy="${28-((v-mn)/sp)*26}" r="2.5" fill="${z.color}"/>`;
+  // 12개월 대비 위치 + 감정 곡선 연결 해석
+  const yearAvg = spark.reduce((a,b)=>a+b,0)/spark.length;
+  const rel = v < yearAvg*0.9 ? "최근 1년 평균보다 낮음" : v > yearAvg*1.1 ? "최근 1년 평균보다 높음" : "최근 1년 평균 수준";
+  let interp = `시장 심리는 <b>${z.name}</b> 상태 (${rel}) — 감정 곡선의 <b>${z.emotion}</b> 구간과 대응해요.`;
   if(v < 14 && topFit[0]==="성장"){
-    document.getElementById("noteText").textContent +=
-      " 참고로 공포지수가 매우 낮아요 — 모두가 안심하는 순간이 성장 끄트머리의 특징이기도 해요.";
+    interp += ` ⚠️ 성장 신호가 강한데 공포가 이렇게 낮으면, 모두가 안심하는 <b>성장 끄트머리</b>의 전형일 수 있어요.`;
+  } else if(v >= 30){
+    interp += ` 역사적으로 공포가 극심할 때가 항복~우울 구간, 즉 <b>가장 사기 좋은 시점</b>에 가까웠어요.`;
   }
+  document.getElementById("vixInterp").innerHTML = interp;
 })();
 
 /* 6개 카드 */
