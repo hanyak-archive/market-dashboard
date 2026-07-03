@@ -107,6 +107,10 @@
   .kwchip{font-size:10.5px;padding:2px 8px;border-radius:10px;background:var(--panel2);border:1px solid var(--line);color:var(--sub);}
   .phase-ex-head{font-size:11.5px;color:var(--mute);margin:14px 0 4px;text-transform:none;letter-spacing:.02em;}
   .news-item .body{display:flex;flex-direction:column;gap:1px;min-width:0;}
+  .open-btns{display:inline-flex;gap:4px;margin-left:6px;vertical-align:middle;}
+  .open-btn{font-size:10.5px;padding:1px 7px;border-radius:9px;border:1px solid var(--line);
+    background:var(--panel2);color:var(--sub);text-decoration:none;white-space:nowrap;}
+  .open-btn:hover{border-color:var(--gold);color:var(--gold);}
 
   .phase-bars{margin:6px 0 16px;}
   .pbar-row{display:flex;align-items:center;gap:10px;margin-bottom:7px;font-size:12.5px;}
@@ -667,9 +671,14 @@ document.querySelector('.range-btn[data-range="36"]').classList.add("active");
   }
   function newsRow(labelEmoji, item){
     const chips = (item.matched||[]).map(k=>`<span class="kwchip">${esc(k)}</span>`).join("");
+    const q = encodeURIComponent(item.title.replace(/^\(예시\)\s*/, ""));
+    const searchBtns = `<span class="open-btns">
+      <a class="open-btn" href="https://www.google.com/search?q=${q}" target="_blank" rel="noopener" title="구글에서 원문 찾기">🔍구글</a>
+      <a class="open-btn" href="https://search.naver.com/search.naver?where=news&query=${q}" target="_blank" rel="noopener" title="네이버 뉴스에서 찾기">🟢네이버</a>
+    </span>`;
     return `<div class="news-item"><span class="sig">${labelEmoji}</span>
       <div class="body">
-        <a href="${item.link}" target="_blank" rel="noopener">${highlightKw(item.title, item.matched)}</a>
+        <div>${highlightKw(item.title, item.matched)} ${searchBtns}</div>
         ${chips?`<div class="kwchips">${chips}</div>`:""}
       </div></div>`;
   }
