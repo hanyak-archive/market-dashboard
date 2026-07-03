@@ -102,6 +102,11 @@
   .news-item a{color:var(--text);text-decoration:none;}
   .news-item a:hover{color:var(--gold);}
   .news-empty{color:var(--mute);font-size:13px;padding:6px 0;}
+  .kw{background:rgba(216,163,76,.22);color:var(--gold);border-radius:3px;padding:0 3px;font-weight:600;}
+  .kwchips{display:flex;gap:5px;flex-wrap:wrap;margin-top:3px;}
+  .kwchip{font-size:10.5px;padding:2px 8px;border-radius:10px;background:var(--panel2);border:1px solid var(--line);color:var(--sub);}
+  .phase-ex-head{font-size:11.5px;color:var(--mute);margin:14px 0 4px;text-transform:none;letter-spacing:.02em;}
+  .news-item .body{display:flex;flex-direction:column;gap:1px;min-width:0;}
 
   .phase-bars{margin:6px 0 16px;}
   .pbar-row{display:flex;align-items:center;gap:10px;margin-bottom:7px;font-size:12.5px;}
@@ -651,13 +656,41 @@ document.querySelector('.range-btn[data-range="36"]').classList.add("active");
     return `<div class="chip ${v>0?sigColor[k]:''}" title="${n.rules[k]?.desc||''}">${label} <b>${v}건</b></div>`;
   }).join("");
 
-  if(n.flagged && n.flagged.length){
-    flaggedEl.innerHTML = n.flagged.map(f=>
-      `<div class="news-item"><span class="sig">${f.label.split(" ")[0]}</span><a href="${f.link}" target="_blank" rel="noopener">${f.title}</a></div>`
-    ).join("");
-  } else {
-    flaggedEl.innerHTML = `<div class="news-empty">오늘 스캔에서 매칭된 함정·신호 서사가 없어요. 조용한 날이에요.</div>`;
+  /* 키워드 하이라이트 헬퍼 */
+  function esc(s){ return s.replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+  function highlightKw(title, kws){
+    let t = esc(title);
+    (kws||[]).slice().sort((a,b)=>b.length-a.length).forEach(kw=>{
+      t = t.split(esc(kw)).join(`<span class="kw">${esc(kw)}</span>`);
+    });
+    return t;
   }
+  function newsRow(labelEmoji, item){
+    const chips = (item.matched||[]).map(k=>`<span class="kwchip">${esc(k)}</span>`).join("");
+    return `<div class="news-item"><span class="sig">${labelEmoji}</span>
+      <div class="body">
+        <a href="${item.link}" target="_blank" rel="noopener">${highlightKw(item.title, item.matched)}</a>
+        ${chips?`<div class="kwchips">${chips}</div>`:""}
+      </div></div>`;
+  }
+
+  let flaggedHtml = "";
+  if(n.flagged && n.flagged.length){
+    flaggedHtml += n.flagged.map(f=> newsRow(f.label.split(" ")[0], f)).join("");
+  } else {
+    flaggedHtml += `<div class="news-empty">오늘 스캔에서 매칭된 함정·신호 서사가 없어요. 조용한 날이에요.</div>`;
+  }
+
+  /* 국면 서사 대표 기사 (키워드 근거 포함) */
+  if(n.phase_examples){
+    const phaseEmoji = {"회복":"🌱","성장":"🌞","둔화":"🍂","침체":"❄️"};
+    Object.entries(n.phase_examples).forEach(([ph, items])=>{
+      if(!items || !items.length) return;
+      flaggedHtml += `<div class="phase-ex-head">${phaseEmoji[ph]||""} ${ph} 서사 대표 기사</div>`;
+      flaggedHtml += items.map(it=> newsRow(phaseEmoji[ph]||"·", it)).join("");
+    });
+  }
+  flaggedEl.innerHTML = flaggedHtml;
 })();
 
 })();
